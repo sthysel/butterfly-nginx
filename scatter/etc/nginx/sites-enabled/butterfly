@@ -1,0 +1,68 @@
+server {
+    listen       80;
+    listen       443 ssl;
+
+    listen       [::]:80;
+    listen       [::]:443 ssl;
+
+    server_name  docker.sthysel.net;
+
+    include snippets/ssl-docker.sthysel.net.conf;
+    include snippets/ssl-params.conf;
+
+
+    charset utf-8;
+
+    access_log  /var/log/nginx/$host.access.log;
+
+    client_max_body_size 20M;
+
+    root   /var/www/html/;
+    index  index.html index.htm;
+
+    if ($ssl_protocol = "") {
+        return 301 https://$http_host$request_uri;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+    location ~ /.well-known {
+         allow all;
+    }
+
+    location /butterfly {
+        auth_basic "Authentication required";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
+        rewrite ^/butterfly/?(.*) /$1 break;
+        proxy_pass http://127.0.0.1:57575;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header Origin "$scheme://$host";
+
+        proxy_connect_timeout 7d;                                                                                                              
+        proxy_send_timeout 7d;                                                                                                                 
+        proxy_read_timeout 7d;
+
+        sub_filter_once off;
+
+        sub_filter_types text/css text/xml application/javascript;
+        sub_filter /style.css '/butterfly/style.css';
+        sub_filter /static '/butterfly/static';
+        sub_filter /ws '/butterfly/ws';
+        sub_filter /ctl '/butterfly/ctl';
+        sub_filter /themes '/butterfly/themes';
+        sub_filter location.pathname '"/"';
+    }
+
+    rewrite ^/theme/?(.*)/butterfly/?(.*) /butterfly/theme/$1/$2 permanent;
+}
