@@ -1,5 +1,7 @@
 # butterfly-nginx
 
+![](./docs/pics/butterfly.png)
+
 Install butterfly terminal emulator behind a Let's Encrypt cert secured nginx proxy.
 
 To register with Let's Encrypt use nginx's default setup with the webroot plugin. Once that is done
