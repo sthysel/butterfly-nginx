@@ -263,6 +263,13 @@ server {
 Be sure to make the file ```/var/log/nginx/docker.sthysel.net.access.log``` with the correct
 permissions. On Ubuntu its  ```www-data adm```.
 
+
+```/etc/nginx/.htpasswd``` is generate by htpasswd:
+
+```bash
+$ sudo htpasswd -c /etc/nginx/.htpasswd YOUR_HTTP_AUTH_USER_NAME
+```
+
 Test with ```$ sudo nginx -t``` and restart ```$ sudo systemctl restart nginx```
 
 Now hit butterfly at https://docker.sthysel.net/butterfly
