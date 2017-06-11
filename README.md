@@ -15,7 +15,8 @@ butterfly.
   certificate with. Make use of any of the many domain name registars. There must be a
   A Record that points your domain to the public IP address of your server.
 
-Recipe follows
+Recipe follows, be sure to substitute ```docker.sthysel.net``` with the correct
+domain name.
 
 ## Install nginx 
 
@@ -36,7 +37,6 @@ server {
 
         root /var/www/html;
 
-        # Add index.php to the list if you are using PHP
         index index.html index.htm index.nginx-debian.html;
 
         server_name _;
@@ -96,6 +96,177 @@ $ sudo openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
 
 This may take a few minutes but when it's done you will have a strong DH group at
 ```/etc/ssl/certs/dhparam.pem.```
+
+
+## nginx snippets for encrypted connections
+
+In ```/etc/nginx/snippets/ssl-params.conf```
+
+```
+# from https://cipherli.st/
+# and https://raymii.org/s/tutorials/Strong_SSL_Security_On_nginx.html
+
+ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+ssl_prefer_server_ciphers on;
+ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
+
+ssl_ecdh_curve secp384r1;
+ssl_session_cache shared:SSL:10m;
+ssl_session_tickets off;
+ssl_stapling on;
+ssl_stapling_verify on;
+resolver 8.8.8.8 8.8.4.4 valid=300s;
+resolver_timeout 5s;
+# disable HSTS header for now
+#add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+add_header X-Frame-Options DENY;
+add_header X-Content-Type-Options nosniff;
+
+ssl_dhparam /etc/ssl/certs/dhparam.pem;
+
+```
+
+
+In ```/etc/nginx/snippets/ssl-docker.sthysel.net.conf```
+
+```
+ssl_certificate /etc/letsencrypt/live/docker.sthysel.net/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/docker.sthysel.net/privkey.pem;
+```
+
+
+## Install butterly 
+
+Install in nginx docroot, for this config its in ```/var/www/html```
+
+
+``` bash
+$ sudo bash
+$ mkdir -p /var/www/butterfly
+$ cd /var/www/butterfly
+$ virtualenv -p python3 venv
+$ source venv/bin/activate
+$ pip install butterfly
+$ pip install libsass
+$ deactivate
+$ exit
+```
+
+Butterfly needs to run always so add a systemd service to make that happen
+
+In ```/etc/systemd/system/butterfly.service``` 
+
+```
+
+[Unit]
+Description=Butterfly service
+After=network.target
+
+[Service]
+ExecStart=/var/www/butterfly/venv/bin/butterfly.server.py --unsecure --login=true --host=127.0.0.1
+Restart=always
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=buttefly
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Start and enable butterfly service.
+
+```bash
+$ sudo systemctl enable butterfly
+$ sudo systemctl start butterfly
+$ sudo systemctl status butterfly
+```
+
+## butterfly nginx config
+
+Now make a new butterfly nginx config using the snippets prepared earlier
+
+In ```/etc/nginx/sites-available/butterfly```
+
+```
+server {
+    listen       80;
+    listen       443 ssl;
+
+    listen       [::]:80;
+    listen       [::]:443 ssl;
+
+    server_name  docker.sthysel.net;
+
+    include snippets/ssl-docker.sthysel.net.conf;
+    include snippets/ssl-params.conf;
+
+
+    charset utf-8;
+
+    access_log  /var/log/nginx/$host.access.log;
+
+    client_max_body_size 20M;
+
+    root   /var/www/html/;
+    index  index.html index.htm;
+
+    if ($ssl_protocol = "") {
+        return 301 https://$http_host$request_uri;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+    location ~ /.well-known {
+         allow all;
+    }
+
+    location /butterfly {
+        auth_basic "Authentication required";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
+        rewrite ^/butterfly/?(.*) /$1 break;
+        proxy_pass http://127.0.0.1:57575;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header Origin "$scheme://$host";
+
+        proxy_connect_timeout 7d;                                                                                                              
+        proxy_send_timeout 7d;                                                                                                                 
+        proxy_read_timeout 7d;
+
+        sub_filter_once off;
+
+        sub_filter_types text/css text/xml application/javascript;
+        sub_filter /style.css '/butterfly/style.css';
+        sub_filter /static '/butterfly/static';
+        sub_filter /ws '/butterfly/ws';
+        sub_filter /ctl '/butterfly/ctl';
+        sub_filter /themes '/butterfly/themes';
+        sub_filter location.pathname '"/"';
+    }
+
+    rewrite ^/theme/?(.*)/butterfly/?(.*) /butterfly/theme/$1/$2 permanent;
+}
+
+```
+
+
+Be sure to make the file ```/var/log/nginx/docker.sthysel.net.access.log``` with the correct
+permissions. On Ubuntu its  ```www-data adm```.
+
+Test with ```$ sudo nginx -t``` and restart ```$ sudo systemctl restart nginx```
+
+Now hit butterfly at https://docker.sthysel.net/butterfly
+
 
 # Resources
 
