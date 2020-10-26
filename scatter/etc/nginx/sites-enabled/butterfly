@@ -56,6 +56,7 @@ server {
         sub_filter_once off;
 
         sub_filter_types text/css text/xml application/javascript;
+        sub_filter /local.js '/butterfly/local.js';
         sub_filter /style.css '/butterfly/style.css';
         sub_filter /static '/butterfly/static';
         sub_filter /ws '/butterfly/ws';
